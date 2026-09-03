@@ -1,0 +1,40 @@
+# Tooling config for examples/ only. This repository is a case study, not a
+# package — there is nothing here to build or install. The point of this file
+# is that the illustrative examples are held to the same mechanical standard
+# the case study describes: linted, formatted, type-checked and tested in CI.
+
+[tool.ruff]
+line-length = 96
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle
+    "F",    # pyflakes
+    "I",    # import sorting
+    "UP",   # pyupgrade
+    "B",    # bugbear
+    "SIM",  # simplify
+    "RUF",
+]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unreachable = true
+# Examples are self-contained and stdlib-only, so there are no third-party stubs
+# to chase. If that ever changes, prefer adding the stubs over loosening this.
+
+[tool.pytest.ini_options]
+testpaths = ["examples/tests"]
+pythonpath = ["."]
+addopts = "-q --strict-markers"
+# Narrow, and deliberately not a blanket filter: this is a deprecation raised
+# inside Starlette's test client about an anyio alias, on an import line we do
+# not control. Scoped to the exact message so our own DeprecationWarnings still
+# surface -- a broad `ignore::DeprecationWarning` would hide the ones that
+# matter, which is the same "silenced signal" mistake the case study is about.
+filterwarnings = [
+    "error",
+    "ignore:The anyio.abc.BlockingPortal alias is deprecated:DeprecationWarning",
+]

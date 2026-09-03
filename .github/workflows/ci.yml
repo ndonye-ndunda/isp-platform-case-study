@@ -1,0 +1,68 @@
+# CI for the illustrative examples.
+#
+# A case study that argues conventions should be enforced mechanically, and then
+# ships unchecked snippets, has argued against itself. So the examples are
+# linted, format-checked, type-checked under mypy --strict, and tested here on
+# every push.
+#
+# The dependency surface is deliberately tiny -- pytest plus FastAPI and httpx
+# for the one HTTP example. No databases, no Redis, no fixtures to provision,
+# no network. An example you cannot run in ten seconds is an example nobody
+# runs, and the patterns worth showing (locking, dual-store ordering, worker
+# liveness, tool gateways) are demonstrated against small Protocols with
+# in-memory fakes instead.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  examples:
+    name: lint + types + tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install tooling
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff==0.8.4 mypy==1.14.0 pytest==8.3.4 \
+                      fastapi==0.115.6 httpx==0.28.1
+
+      - name: ruff check
+        run: ruff check --output-format=github .
+
+      - name: ruff format --check
+        run: ruff format --check .
+
+      - name: mypy (strict)
+        run: mypy examples/
+
+      - name: pytest
+        run: pytest
+
+      # The examples include a small version of the convention-guard idea from
+      # docs/07. Running it over this repository's own Python proves the idea
+      # works, rather than only asserting that it did. Note it is invoked
+      # DIRECTLY rather than through a git-hook framework -- in the production
+      # system the guards silently did not run for a period because the hook
+      # framework was missing from a requirements file, and a guard that is not
+      # installed is a guard that does not exist.
+      - name: convention guards (self-applied)
+        run: python examples/guards/convention_guards.py $(git ls-files '*.py')

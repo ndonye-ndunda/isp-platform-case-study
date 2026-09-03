@@ -1,0 +1,65 @@
+{
+  "_comment": [
+    "Synthetic payloads. Sanitized illustrative example — not production source.",
+    "These are NOT any real provider's schema. Field names are invented for",
+    "illustration; the real gateway contract is not reproduced.",
+    "All identifiers come from reserved documentation ranges: the +254700000000",
+    "test block, RFC 5737 TEST-NET addresses, and *.example.test domains."
+  ],
+
+  "payment_notification": {
+    "provider_txn_id": "TEST-TXN-000001",
+    "account_ref": "ACC-0001",
+    "amount": "2500.00",
+    "received_at": "2026-01-15T09:14:22+03:00"
+  },
+
+  "payment_notification_duplicate_redelivery": {
+    "_note": "Identical id. Must return the same response and must NOT re-enqueue.",
+    "provider_txn_id": "TEST-TXN-000001",
+    "account_ref": "ACC-0001",
+    "amount": "2500.00",
+    "received_at": "2026-01-15T09:14:51+03:00"
+  },
+
+  "payment_notification_unparseable_amount": {
+    "_note": "Must return 4xx and alert. Returning 200 here means money received and never credited.",
+    "provider_txn_id": "TEST-TXN-000002",
+    "account_ref": "ACC-0002",
+    "amount": "2,500.00",
+    "received_at": "2026-01-15T09:20:00+03:00"
+  },
+
+  "rendered_notification": {
+    "_note": "The application renders the finished text; the transport interpolates nothing. Dates are arbitrary and imply no cycle length.",
+    "event": "cycle_activated",
+    "recipient": "+254700000001",
+    "body": "Payment of KES 2,500.00 received. Your service is active until 09 Mar.",
+    "segments": 1,
+    "encoding": "GSM-7"
+  },
+
+  "site_telemetry_sample": {
+    "site": "site-alpha",
+    "exporter_address": "192.0.2.10:9436",
+    "isp_site_up": 1,
+    "isp_pppoe_sessions": 23,
+    "isp_router_cpu_percent": 17.5,
+    "isp_latency_ms": 34.2,
+    "isp_packet_loss_percent": 0.0
+  },
+
+  "ops_agent_tool_call": {
+    "_note": "Shape of a read-only tool call. Values illustrative.",
+    "tool": "query_logs",
+    "arguments": {
+      "datasource": "logs",
+      "query": "{job=~\"proxy|system\"} |~ \"(?i)error\"",
+      "start": "now-1h",
+      "end": "now",
+      "limit": "10"
+    },
+    "result_truncated": true,
+    "_calibration_note": "limit was reached — a well-calibrated answer must say so"
+  }
+}

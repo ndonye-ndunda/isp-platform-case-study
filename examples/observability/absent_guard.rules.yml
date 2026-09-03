@@ -1,0 +1,143 @@
+# Alert rules that survive their own data going missing.
+#
+# Sanitized illustrative example — not production source. Thresholds are
+# placeholders and the metric names are the illustrative `isp_*` contract
+# used elsewhere in these examples.
+#
+# THE PROBLEM (docs/05). In Prometheus, a rule whose expression matches no
+# series does not fire -- there is nothing to compare, so there is no alert.
+# Consequently:
+#
+#     a "site is down" rule behaves IDENTICALLY to a healthy site
+#     when the exporter that would produce its input was never deployed.
+#
+# The rule loads. `promtool check rules` passes. The expression is correct. The
+# dashboard is simply empty, and an empty dashboard reads as calm. Every check a
+# reasonable engineer would run passes, and the rule has never been able to fire.
+#
+# Each group below pairs a CONDITION rule with a GUARD rule that fires when the
+# condition's own input disappears.
+
+groups:
+  # ---------------------------------------------------------------------------
+  - name: site_availability
+    rules:
+      # The obvious rule. Necessary, and on its own insufficient.
+      - alert: SiteDown
+        expr: isp_site_up == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Site {{ $labels.site }} reporting down"
+
+      # GUARD 1 -- the metric itself vanished. Covers a crashed exporter, a
+      # deleted target, a renamed metric, and (crucially) an exporter that was
+      # never deployed at all.
+      - alert: SiteUpMetricAbsent
+        expr: absent(isp_site_up)
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No site availability data at all - alerting is BLIND"
+          description: >-
+            isp_site_up has no series. Every rule in this group is
+            evaluating an absent series, which produces no alerts and is
+            indistinguishable from every site being healthy.
+
+      # GUARD 2 -- assert on the TARGET, not the metric. When an exporter is
+      # silent it publishes nothing, so the scrape target's own labels are all
+      # Prometheus has to identify what went quiet.
+      - alert: SiteExporterTargetDown
+        expr: up{job="site_exporter"} == 0
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Exporter target {{ $labels.instance }} unreachable"
+
+  # ---------------------------------------------------------------------------
+  - name: worker_liveness
+    rules:
+      # Stale: it has succeeded before, but not recently.
+      - alert: WorkerStalled
+        expr: >-
+          time() - isp_worker_last_success_timestamp_seconds > 5400
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Worker {{ $labels.job }} has not succeeded recently"
+
+      # NEVER SUCCEEDED -- the case a staleness rule structurally cannot see,
+      # because a worker with no history has no timestamp series to compare.
+      # `unless` computes roster-minus-observed, which turns the absence into a
+      # value that can fire. This is the payoff for publishing a roster:
+      # see liveness_metrics.py.
+      - alert: WorkerNeverSucceeded
+        expr: >-
+          isp_worker_registered
+          unless isp_worker_last_success_timestamp_seconds
+        for: 30m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Worker {{ $labels.job }} has NEVER completed a run"
+          description: >-
+            Registered in the scheduler roster but has no successful run on
+            record. Typically a registration that silently stopped being
+            reached, or a deploy that dropped the job.
+
+      # A killed process leaves its heartbeat row frozen at 'running'. That is
+      # a distinct signal from a caught exception and needs its own rule.
+      - alert: WorkerFrozenRuns
+        expr: isp_worker_frozen_runs > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Worker {{ $labels.job }} has runs that never completed"
+          description: >-
+            Indicates the process was killed mid-run (OOM, SIGKILL, host
+            reboot) rather than raising an exception. Check host memory before
+            looking at the job's code.
+
+      # GUARD -- the application stopped exposing worker metrics entirely.
+      # Without this, a metrics endpoint failure silences every rule above and
+      # looks exactly like a fleet of healthy workers.
+      - alert: WorkerMetricsAbsent
+        expr: absent(isp_worker_registered)
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Worker liveness metrics absent - worker alerting is BLIND"
+
+  # ---------------------------------------------------------------------------
+  - name: monitoring_self
+    rules:
+      # Monitoring needs monitoring. "Is this alert CAPABLE of firing?" is a
+      # different question from "is this alert correct?", and only the second
+      # is answered by code review.
+      - alert: PrometheusRuleEvaluationFailures
+        expr: increase(prometheus_rule_evaluation_failures_total[10m]) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "Rules are failing to evaluate - coverage is silently reduced"
+
+      - alert: AlertmanagerNotificationsFailing
+        expr: increase(alertmanager_notifications_failed_total[15m]) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "Alertmanager cannot deliver - alerts are firing into a void"
+
+      # WHAT THESE RULES STRUCTURALLY CANNOT COVER, stated rather than left
+      # implicit: none of the above helps if Prometheus, Alertmanager or the host
+      # dies entirely. The absence of alerts is then indistinguishable from
+      # quiet -- the absent-series problem one level up, applied to the alerting
+      # stack itself. No rule evaluated BY the stack can detect the stack being
+      # gone; the only answer is an external heartbeat that alerts on SILENCE.
+      # That lives outside a rules file by definition.
